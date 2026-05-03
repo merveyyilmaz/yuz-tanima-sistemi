@@ -3,13 +3,7 @@
 > **Bulut Bilişim Proje Sunumu**  
 > PaaS (Platform as a Service) Mimarisi ile Canlıya Alma
 
-**Ekip:**
-- Emircan ALKAN — 220106206014  
-- Kaan BAYDERE — 220106109052  
-- Yiğit KARABULUT — 220106206049  
-- Merve YILMAZ — 220106109018  
 
----
 
 ## 📌 Proje Özeti
 
