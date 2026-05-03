@@ -19,56 +19,77 @@ st.set_page_config(
 # ── CSS Stilleri ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+    /* Aydınlık arka plan */
     .stApp {
-        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+        background: linear-gradient(135deg, #f0f4ff, #e8f0fe, #f5f0ff);
     }
+
+    /* Başlık kutusu */
     .main-header {
-        background: linear-gradient(90deg, #4f46e5, #7c3aed);
+        background: linear-gradient(90deg, #2563eb, #0ea5e9);
         padding: 2rem;
         border-radius: 16px;
         text-align: center;
         margin-bottom: 2rem;
-        box-shadow: 0 8px 32px rgba(79, 70, 229, 0.4);
+        box-shadow: 0 8px 32px rgba(37, 99, 235, 0.25);
     }
     .main-header h1 { color: white; font-size: 2.2rem; font-weight: 700; margin: 0; }
-    .main-header p  { color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; }
+    .main-header p  { color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0; }
+
+    /* Metrik kartlar */
     .metric-card {
-        background: rgba(255,255,255,0.07);
-        border: 1px solid rgba(255,255,255,0.15);
+        background: white;
+        border: 1px solid #dbeafe;
         border-radius: 12px;
         padding: 1.2rem;
         text-align: center;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.08);
     }
-    .metric-card h3 { color: #a5b4fc; font-size: 0.85rem; margin: 0 0 0.4rem 0; text-transform: uppercase; }
-    .metric-card p  { color: white; font-size: 2rem; font-weight: 700; margin: 0; }
+    .metric-card h3 { color: #2563eb; font-size: 0.85rem; margin: 0 0 0.4rem 0; text-transform: uppercase; }
+    .metric-card p  { color: #1e293b; font-size: 2rem; font-weight: 700; margin: 0; }
+
+    /* Sonuç kutuları */
     .result-box-success {
-        background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.5);
-        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0;
+        background: #f0fdf4; border: 1px solid #86efac;
+        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0; color: #166534;
     }
     .result-box-warning {
-        background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.5);
-        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0;
+        background: #fffbeb; border: 1px solid #fcd34d;
+        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0; color: #92400e;
     }
     .result-box-info {
-        background: rgba(79,70,229,0.15); border: 1px solid rgba(79,70,229,0.5);
-        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0;
+        background: #eff6ff; border: 1px solid #bfdbfe;
+        border-radius: 12px; padding: 1rem 1.5rem; margin: 0.5rem 0; color: #1e40af;
     }
+
+    /* Sidebar */
     section[data-testid="stSidebar"] {
-        background: rgba(15,12,41,0.95) !important;
-        border-right: 1px solid rgba(255,255,255,0.1);
+        background: #f8faff !important;
+        border-right: 1px solid #dbeafe;
     }
-    .stMarkdown p, .stMarkdown li { color: rgba(255,255,255,0.85); }
+
+    /* Genel metin */
+    .stMarkdown p, .stMarkdown li { color: #1e293b; }
+
+    /* Butonlar */
     .stButton > button {
-        background: linear-gradient(90deg, #4f46e5, #7c3aed);
+        background: linear-gradient(90deg, #2563eb, #0ea5e9);
         color: white; border: none; border-radius: 8px;
         padding: 0.5rem 1.5rem; font-weight: 600;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.2);
     }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+    }
+
+    /* Sekmeler */
     .stTabs [data-baseweb="tab-list"] {
-        background: rgba(255,255,255,0.05); border-radius: 10px; padding: 4px;
+        background: #e0eaff; border-radius: 10px; padding: 4px;
     }
-    .stTabs [data-baseweb="tab"] { color: rgba(255,255,255,0.6); border-radius: 8px; }
+    .stTabs [data-baseweb="tab"] { color: #3b5fc0; border-radius: 8px; }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(90deg, #4f46e5, #7c3aed) !important;
+        background: linear-gradient(90deg, #2563eb, #0ea5e9) !important;
         color: white !important;
     }
 </style>
@@ -273,7 +294,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-    <div style='font-size:0.8rem; color: rgba(255,255,255,0.6);'>
+    <div style='font-size:0.8rem; color: #64748b;'>
     🌐 <b>Platform:</b> PaaS (Streamlit Cloud)<br>
     🤖 <b>Model:</b> DeepFace · Facenet<br>
     🐍 <b>Backend:</b> Python + OpenCV<br>
@@ -425,7 +446,7 @@ with tab3:
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("""
-<div style='text-align:center; color: rgba(255,255,255,0.3); font-size:0.8rem;'>
+<div style='text-align:center; color: #94a3b8; font-size:0.8rem;'>
     Bulut Bilişim Proje · PaaS Mimarisi ile Bulut Tabanlı Yüz Tanıma Sistemi<br>
     Emircan ALKAN · Kaan BAYDERE · Yiğit KARABULUT · Merve YILMAZ
 </div>
