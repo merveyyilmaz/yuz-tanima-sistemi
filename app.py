@@ -250,7 +250,7 @@ with st.sidebar:
 
     threshold = st.slider(
         "🎯 Tanıma Eşiği",
-        min_value=0.60, max_value=0.90, value=0.75, step=0.01,
+        min_value=0.60, max_value=0.90, value=0.85, step=0.01,
         help="Yüksek = daha katı eşleşme"
     )
 
