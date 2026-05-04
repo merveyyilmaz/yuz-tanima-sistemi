@@ -8,7 +8,6 @@ import time
 from datetime import datetime
 from scipy.spatial.distance import cosine
 
-# ── Sayfa Yapılandırması ──────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Bulut Tabanlı Yüz Tanıma Sistemi",
     page_icon="🎭",
@@ -16,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     .stApp { background: linear-gradient(135deg, #f0f4ff, #e8f0fe, #f5f0ff); }
@@ -54,9 +52,7 @@ st.markdown("""
         color: white; border: none; border-radius: 8px;
         padding: 0.5rem 1.5rem; font-weight: 600;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        background: #e0eaff; border-radius: 10px; padding: 4px;
-    }
+    .stTabs [data-baseweb="tab-list"] { background: #e0eaff; border-radius: 10px; padding: 4px; }
     .stTabs [data-baseweb="tab"] { color: #3b5fc0; border-radius: 8px; }
     .stTabs [aria-selected="true"] {
         background: linear-gradient(90deg, #2563eb, #0ea5e9) !important;
@@ -66,172 +62,179 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ── Dedektör ve LBP ──────────────────────────────────────────────────────────
+# ── Dedektör ──────────────────────────────────────────────────────────────────
 @st.cache_resource
-def load_detector():
-    return cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
+def load_detectors():
+    frontal = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    profile = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
+    return frontal, profile
 
-def extract_lbp_features(gray_face, size=128):
-    resized = cv2.resize(gray_face, (size, size))
-    eq      = cv2.equalizeHist(resized)
-    lbp = np.zeros_like(eq)
-    for i in range(1, size - 1):
-        for j in range(1, size - 1):
-            center = eq[i, j]
-            code = 0
-            code |= (1 << 7) if eq[i-1, j-1] >= center else 0
-            code |= (1 << 6) if eq[i-1, j  ] >= center else 0
-            code |= (1 << 5) if eq[i-1, j+1] >= center else 0
-            code |= (1 << 4) if eq[i,   j+1] >= center else 0
-            code |= (1 << 3) if eq[i+1, j+1] >= center else 0
-            code |= (1 << 2) if eq[i+1, j  ] >= center else 0
-            code |= (1 << 1) if eq[i+1, j-1] >= center else 0
-            code |= (1 << 0) if eq[i,   j-1] >= center else 0
-            lbp[i, j] = code
-    grid = 8
-    cell = size // grid
-    hist_all = []
+
+# ── Özellik Çıkarma ──────────────────────────────────────────────────────────
+def extract_lbp(gray, size=64):
+    img = cv2.resize(gray, (size, size))
+    img = cv2.equalizeHist(img)
+    lbp = np.zeros_like(img)
+    for i in range(1, size-1):
+        for j in range(1, size-1):
+            c = img[i,j]
+            code  = (1<<7) if img[i-1,j-1]>=c else 0
+            code |= (1<<6) if img[i-1,j  ]>=c else 0
+            code |= (1<<5) if img[i-1,j+1]>=c else 0
+            code |= (1<<4) if img[i  ,j+1]>=c else 0
+            code |= (1<<3) if img[i+1,j+1]>=c else 0
+            code |= (1<<2) if img[i+1,j  ]>=c else 0
+            code |= (1<<1) if img[i+1,j-1]>=c else 0
+            code |= (1<<0) if img[i  ,j-1]>=c else 0
+            lbp[i,j] = code
+    grid, cell = 8, size//8
+    h = []
     for r in range(grid):
-        for c in range(grid):
-            cell_lbp = lbp[r*cell:(r+1)*cell, c*cell:(c+1)*cell]
-            hist, _ = np.histogram(cell_lbp, bins=32, range=(0, 256))
-            hist_all.extend(hist)
-    vec = np.array(hist_all, dtype=np.float32)
-    norm = np.linalg.norm(vec)
-    return vec / norm if norm > 0 else vec
+        for c2 in range(grid):
+            patch = lbp[r*cell:(r+1)*cell, c2*cell:(c2+1)*cell]
+            hist, _ = np.histogram(patch, bins=32, range=(0,256))
+            h.extend(hist)
+    v = np.array(h, dtype=np.float32)
+    n = np.linalg.norm(v)
+    return v/n if n>0 else v
 
 
-def extract_hog_features(gray_face, size=64):
-    """HOG (Histogram of Oriented Gradients) özellik vektörü"""
-    resized = cv2.resize(gray_face, (size, size))
-    eq = cv2.equalizeHist(resized)
-    gx = cv2.Sobel(eq, cv2.CV_32F, 1, 0, ksize=1)
-    gy = cv2.Sobel(eq, cv2.CV_32F, 0, 1, ksize=1)
+def extract_hog(gray, size=64):
+    img = cv2.resize(gray, (size, size))
+    img = cv2.equalizeHist(img)
+    gx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=1)
+    gy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=1)
     mag, ang = cv2.cartToPolar(gx, gy, angleInDegrees=True)
     cell = 8
-    bins = 9
-    hog_feats = []
+    h = []
     for r in range(0, size, cell):
         for c in range(0, size, cell):
             m = mag[r:r+cell, c:c+cell]
             a = ang[r:r+cell, c:c+cell] % 180
-            hist, _ = np.histogram(a, bins=bins, range=(0, 180), weights=m)
-            hog_feats.extend(hist)
-    vec = np.array(hog_feats, dtype=np.float32)
-    norm = np.linalg.norm(vec)
-    return vec / norm if norm > 0 else vec
+            hist, _ = np.histogram(a, bins=9, range=(0,180), weights=m)
+            h.extend(hist)
+    v = np.array(h, dtype=np.float32)
+    n = np.linalg.norm(v)
+    return v/n if n>0 else v
 
 
-def extract_pixel_features(gray_face, size=32):
-    """Normalize edilmiş piksel vektörü — farklı ışık koşullarına karşı"""
-    resized = cv2.resize(gray_face, (size, size))
-    eq = cv2.equalizeHist(resized)
-    vec = eq.flatten().astype(np.float32)
-    norm = np.linalg.norm(vec)
-    return vec / norm if norm > 0 else vec
+def extract_pixel(gray, size=32):
+    img = cv2.resize(gray, (size, size))
+    img = cv2.equalizeHist(img)
+    v = img.flatten().astype(np.float32)
+    n = np.linalg.norm(v)
+    return v/n if n>0 else v
 
 
-def extract_combined_features(gray_face):
-    """LBP + HOG + Piksel kombinasyonu — en güçlü temsil"""
-    lbp  = extract_lbp_features(gray_face, size=64)
-    hog  = extract_hog_features(gray_face, size=64)
-    pix  = extract_pixel_features(gray_face, size=32)
-    # Ağırlıklı birleştir
-    combined = np.concatenate([lbp * 0.5, hog * 0.35, pix * 0.15])
-    norm = np.linalg.norm(combined)
-    return combined / norm if norm > 0 else combined
+def extract_gabor(gray, size=64):
+    """Gabor filtresi — doku ve kenar bilgisi için ek katman"""
+    img = cv2.resize(gray, (size, size)).astype(np.float32)
+    img = cv2.equalizeHist(img.astype(np.uint8)).astype(np.float32)
+    feats = []
+    for theta in [0, np.pi/4, np.pi/2, 3*np.pi/4]:
+        for freq in [0.1, 0.25]:
+            kern = cv2.getGaborKernel((11,11), 4.0, theta, 1.0/freq, 0.5, 0)
+            filtered = cv2.filter2D(img, cv2.CV_32F, kern)
+            feats.append(filtered.mean())
+            feats.append(filtered.std())
+    v = np.array(feats, dtype=np.float32)
+    n = np.linalg.norm(v)
+    return v/n if n>0 else v
+
+
+def extract_features(gray_face):
+    """LBP + HOG + Piksel + Gabor kombinasyonu"""
+    lbp   = extract_lbp(gray_face,   size=64)
+    hog   = extract_hog(gray_face,   size=64)
+    pix   = extract_pixel(gray_face, size=32)
+    gabor = extract_gabor(gray_face, size=64)
+    combined = np.concatenate([lbp*0.45, hog*0.30, pix*0.15, gabor*0.10])
+    n = np.linalg.norm(combined)
+    return combined/n if n>0 else combined
+
+
+# ── Yüz Tespiti ───────────────────────────────────────────────────────────────
+def detect_faces(gray):
+    """Frontal + profil dedektörü kombinasyonu — daha fazla yüz bulur"""
+    frontal, profile = load_detectors()
+    faces = frontal.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=4, minSize=(40,40))
+    if len(faces) == 0:
+        faces = frontal.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30,30))
+    if len(faces) == 0:
+        faces = profile.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=4, minSize=(40,40))
+    return faces
 
 
 def get_face_vector(pil_img):
-    """PIL görüntüsünden yüz tespiti yap ve LBP vektörü döndür"""
-    detector = load_detector()
     gray = np.array(pil_img.convert("L"))
-
-    faces = detector.detectMultiScale(
-        gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50)
-    )
-    if len(faces) == 0:
-        # Daha az katı ayarla tekrar dene
-        faces = detector.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
-        )
+    faces = detect_faces(gray)
     if len(faces) == 0:
         return None, None
-
     x, y, w, h = max(faces, key=lambda f: f[2]*f[3])
-    face_gray = gray[y:y+h, x:x+w]
-    vec = extract_combined_features(face_gray)
-    return vec, (x, y, w, h)
+    return extract_features(gray[y:y+h, x:x+w]), (x, y, w, h)
 
 
-def compare_faces(vec, known_vectors):
+# ── Yüz Karşılaştırma ─────────────────────────────────────────────────────────
+def compare(vec, known_vecs):
     """
-    En iyi 3 skoru ortalar — tek fotoğraf gürültüsüne karşı dayanıklı.
-    Boyut uyuşmazlığını da tolere eder.
+    Tüm vektörlerle karşılaştır.
+    En iyi 3 skoru ağırlıklı ortala — gürültüye karşı dayanıklı.
     """
     scores = []
-    for kv in known_vectors:
+    for kv in known_vecs:
         if len(kv) != len(vec):
             continue
-        sim = 1.0 - cosine(vec, kv)
-        scores.append(float(sim))
+        s = float(1.0 - cosine(vec, kv))
+        scores.append(s)
     if not scores:
-        return 0.0, 0.0
+        return 0.0
     scores.sort(reverse=True)
-    top = scores[:3]
-    return scores[0], float(np.mean(top))
+    top = scores[:min(3, len(scores))]
+    # En iyi skora daha fazla ağırlık ver
+    weights = [0.6, 0.3, 0.1][:len(top)]
+    return float(sum(s*w for s,w in zip(top, weights)))
 
 
-def detect_and_recognize(pil_img, threshold=0.72):
-    detector = load_detector()
-    img_np   = np.array(pil_img.convert("RGB"))
-    gray     = np.array(pil_img.convert("L"))
+# ── Tespit + Tanıma ───────────────────────────────────────────────────────────
+def detect_and_recognize(pil_img, threshold=0.70):
+    img_np    = np.array(pil_img.convert("RGB"))
+    gray      = np.array(pil_img.convert("L"))
     annotated = img_np.copy()
+    faces     = detect_faces(gray)
+    results   = []
 
-    faces = detector.detectMultiScale(
-        gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50)
-    )
-    if len(faces) == 0:
-        faces = detector.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
-        )
-
-    results = []
     for (x, y, w, h) in faces:
-        face_gray = gray[y:y+h, x:x+w]
-        vec = extract_combined_features(face_gray)
-
-        name = "Bilinmeyen Kişi"
+        vec        = extract_features(gray[y:y+h, x:x+w])
+        name       = "Bilinmeyen Kişi"
         confidence = 0.0
-        color = (255, 140, 0)
+        color      = (255, 140, 0)
 
         if st.session_state.known_faces:
             best_name  = None
             best_score = 0.0
-
             for kname, kvecs in st.session_state.known_faces.items():
-                top_score, avg_score = compare_faces(vec, kvecs)
-                # Hem en iyi hem ortalama skoru değerlendir
-                combined = 0.7 * top_score + 0.3 * avg_score
-                if combined > best_score:
-                    best_score = combined
+                score = compare(vec, kvecs)
+                if score > best_score:
+                    best_score = score
                     best_name  = kname
 
             if best_score >= threshold:
-                name = best_name
+                name       = best_name
                 confidence = round(best_score * 100, 1)
-                color = (0, 200, 100)
+                color      = (0, 200, 100)
 
         cv2.rectangle(annotated, (x, y), (x+w, y+h), color, 2)
         label = f"{name} ({confidence}%)" if confidence > 0 else name
         (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
         cv2.rectangle(annotated, (x, y+h), (x+lw+8, y+h+lh+10), color, -1)
         cv2.putText(annotated, label, (x+4, y+h+lh+4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 1)
 
-        results.append({"name": name, "confidence": confidence, "recognized": confidence > 0})
+        results.append({
+            "name": str(name),
+            "confidence": float(confidence),
+            "recognized": bool(confidence > 0)
+        })
 
     return annotated, results
 
@@ -241,8 +244,9 @@ def log_detection(results, source):
     for r in results:
         st.session_state.detection_log.append({
             "time": ts, "source": source,
-            "name": r["name"], "confidence": r["confidence"],
-            "recognized": r["recognized"]
+            "name": str(r["name"]),
+            "confidence": float(r["confidence"]),
+            "recognized": bool(r["recognized"])
         })
     st.session_state.total_detections += len(results)
     st.session_state.total_recognized += sum(1 for r in results if r["recognized"])
@@ -265,7 +269,7 @@ if "total_recognized" not in st.session_state:
 st.markdown("""
 <div class="main-header">
     <h1>🎭 Bulut Tabanlı Yüz Tanıma Sistemi</h1>
-    <p>PaaS Mimarisi ile Geliştirilmiş · LBP + OpenCV · Streamlit Community Cloud</p>
+    <p>PaaS Mimarisi ile Geliştirilmiş · LBP + HOG + Gabor · Streamlit Community Cloud</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -295,8 +299,8 @@ with st.sidebar:
 
     threshold = st.slider(
         "🎯 Tanıma Eşiği",
-        min_value=0.65, max_value=0.95, value=0.72, step=0.01,
-        help="Yüksek = daha katı, yanlış tanıma azalır"
+        min_value=0.55, max_value=0.90, value=0.70, step=0.01,
+        help="Düşük = daha kolay tanır | Yüksek = daha katı"
     )
 
     st.markdown("---")
@@ -305,8 +309,8 @@ with st.sidebar:
         for kname in list(st.session_state.known_faces.keys()):
             col_a, col_b = st.columns([3, 1])
             with col_a:
-                n_vecs = len(st.session_state.known_faces[kname])
-                st.markdown(f"👤 **{kname}** `({n_vecs} foto)`")
+                n = len(st.session_state.known_faces[kname])
+                st.markdown(f"👤 **{kname}** `({n} foto)`")
             with col_b:
                 if st.button("🗑️", key=f"del_{kname}"):
                     del st.session_state.known_faces[kname]
@@ -316,7 +320,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ➕ Yeni Kişi Ekle")
-    st.caption("💡 Daha iyi tanıma için 3-5 farklı fotoğraf yükleyin")
+    st.caption("💡 En iyi sonuç için 5+ farklı açıdan fotoğraf yükleyin")
     new_name   = st.text_input("Ad Soyad", placeholder="Ahmet Yılmaz")
     new_photos = st.file_uploader(
         "Fotoğraf(lar) Yükle",
@@ -333,7 +337,6 @@ with st.sidebar:
                 vec, _ = get_face_vector(pil_img)
                 if vec is not None:
                     vectors.append(vec)
-
             if vectors:
                 key = new_name.strip()
                 if key in st.session_state.known_faces:
@@ -343,7 +346,7 @@ with st.sidebar:
                 st.success(f"✅ {new_name} kaydedildi! ({len(vectors)} yüz vektörü)")
                 st.rerun()
             else:
-                st.error("❌ Yüz bulunamadı. Net, yakın ve iyi aydınlatılmış fotoğraf deneyin.")
+                st.error("❌ Yüz bulunamadı. Net, yakın, iyi aydınlatılmış fotoğraf deneyin.")
         else:
             st.warning("Ad ve fotoğraf giriniz.")
 
@@ -351,7 +354,7 @@ with st.sidebar:
     st.markdown("""
     <div style='font-size:0.8rem; color: #64748b;'>
     🌐 <b>Platform:</b> PaaS (Streamlit Cloud)<br>
-    🤖 <b>Model:</b> LBP + Cosine Distance<br>
+    🤖 <b>Model:</b> LBP + HOG + Gabor<br>
     🐍 <b>Backend:</b> Python + OpenCV<br>
     ☁️ <b>Mimari:</b> Bulut Tabanlı
     </div>
@@ -361,36 +364,27 @@ with st.sidebar:
 # ── Sekmeler ──────────────────────────────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs(["📸 Fotoğraf Analizi", "📷 Webcam Tespiti", "📋 Tespit Geçmişi"])
 
-# ─── TAB 1 ───────────────────────────────────────────────────────────────────
 with tab1:
     st.markdown("### 📸 Fotoğraf Yükleyerek Yüz Analizi")
-
     uploaded_files = st.file_uploader(
-        "Fotoğraf(lar) seçin",
-        type=["jpg","jpeg","png"],
-        accept_multiple_files=True,
-        key="analyze_photos"
+        "Fotoğraf(lar) seçin", type=["jpg","jpeg","png"],
+        accept_multiple_files=True, key="analyze_photos"
     )
-
     if uploaded_files:
         for uf in uploaded_files:
             st.markdown(f"---\n#### 🖼️ `{uf.name}`")
             img_pil = Image.open(uf).convert("RGB")
-
             col_orig, col_res = st.columns(2)
             with col_orig:
                 st.markdown("**Orijinal**")
                 st.image(img_pil, use_column_width=True)
-
             with st.spinner("🔍 Analiz ediliyor..."):
                 start = time.time()
                 annotated_np, results = detect_and_recognize(img_pil, threshold)
                 elapsed = time.time() - start
-
             with col_res:
                 st.markdown("**Analiz Sonucu**")
                 st.image(annotated_np, use_column_width=True)
-
             if results:
                 log_detection(results, f"Fotoğraf: {uf.name}")
                 st.markdown(f"⏱️ İşlem süresi: **{elapsed:.2f}s** | Bulunan yüz: **{len(results)}**")
@@ -405,9 +399,8 @@ with tab1:
                         </div>""", unsafe_allow_html=True)
             else:
                 st.markdown("""<div class="result-box-info">
-                    ℹ️ Yüz tespit edilemedi. Daha net ve yakın bir fotoğraf deneyin.
+                    ℹ️ Yüz tespit edilemedi. Daha net ve yakın fotoğraf deneyin.
                 </div>""", unsafe_allow_html=True)
-
             buf = io.BytesIO()
             Image.fromarray(annotated_np).save(buf, format="JPEG", quality=95)
             st.download_button("⬇️ Sonucu İndir", buf.getvalue(),
@@ -417,20 +410,16 @@ with tab1:
             📂 Analiz etmek istediğiniz fotoğrafı yükleyin.
         </div>""", unsafe_allow_html=True)
 
-# ─── TAB 2 ───────────────────────────────────────────────────────────────────
 with tab2:
     st.markdown("### 📷 Webcam ile Yüz Tespiti")
     st.info("Kameradan anlık fotoğraf çekip yüz tespiti ve tanıma yapabilirsiniz.")
-
     cam_img = st.camera_input("📸 Kameradan Görüntü Al")
     if cam_img:
         img_pil = Image.open(cam_img).convert("RGB")
-
         with st.spinner("🔍 Analiz ediliyor..."):
             start = time.time()
             annotated_np, results = detect_and_recognize(img_pil, threshold)
             elapsed = time.time() - start
-
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown("**Orijinal**")
@@ -438,7 +427,6 @@ with tab2:
         with col_b:
             st.markdown("**Analiz Sonucu**")
             st.image(annotated_np, use_column_width=True)
-
         st.markdown(f"⏱️ **İşlem süresi:** {elapsed:.2f}s | **Bulunan yüz:** {len(results)}")
         if results:
             log_detection(results, "Webcam")
@@ -456,10 +444,8 @@ with tab2:
                 ℹ️ Yüz tespit edilemedi. Kameraya bakın ve tekrar deneyin.
             </div>""", unsafe_allow_html=True)
 
-# ─── TAB 3 ───────────────────────────────────────────────────────────────────
 with tab3:
     st.markdown("### 📋 Tespit Geçmişi")
-
     if st.session_state.detection_log:
         col_a, col_b = st.columns([1, 5])
         with col_a:
@@ -472,7 +458,6 @@ with tab3:
             log_json = json.dumps(st.session_state.detection_log, ensure_ascii=False, indent=2)
             st.download_button("⬇️ JSON İndir", log_json,
                                file_name="tespit_gecmisi.json", mime="application/json")
-
         st.markdown("<br>", unsafe_allow_html=True)
         hcols = st.columns([1, 2, 3, 2, 1])
         for hc, h in zip(hcols, ["Zaman","Kaynak","Kişi","Güven","Durum"]):
@@ -490,7 +475,6 @@ with tab3:
             📭 Henüz tespit kaydı yok.
         </div>""", unsafe_allow_html=True)
 
-# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align:center; color: #94a3b8; font-size:0.8rem;'>
