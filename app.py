@@ -203,8 +203,9 @@ def log_detection(results, source):
     for r in results:
         st.session_state.detection_log.append({
             "time": ts, "source": source,
-            "name": r["name"], "confidence": r["confidence"],
-            "recognized": r["recognized"]
+            "name": str(r["name"]),
+            "confidence": float(r["confidence"]),
+            "recognized": bool(r["recognized"])
         })
     st.session_state.total_detections += len(results)
     st.session_state.total_recognized += sum(1 for r in results if r["recognized"])
