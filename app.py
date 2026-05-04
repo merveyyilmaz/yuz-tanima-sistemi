@@ -157,9 +157,9 @@ def extract_features(gray_face):
 def detect_faces(gray):
     """Frontal + profil dedektörü kombinasyonu — daha fazla yüz bulur"""
     frontal, profile = load_detectors()
-    faces = frontal.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=4, minSize=(40,40))
+    faces = frontal.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=6, minSize=(60,60))
     if len(faces) == 0:
-        faces = frontal.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30,30))
+        faces = frontal.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50,50))
     if len(faces) == 0:
         faces = profile.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=4, minSize=(40,40))
     return faces
