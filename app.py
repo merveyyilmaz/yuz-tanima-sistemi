@@ -74,14 +74,8 @@ def load_detector():
     )
 
 def extract_lbp_features(gray_face, size=128):
-    """
-    LBP (Local Binary Pattern) tabanlı güçlü özellik vektörü.
-    Aydınlatma değişimlerine ve küçük pozisyon farklarına dayanıklı.
-    """
     resized = cv2.resize(gray_face, (size, size))
     eq      = cv2.equalizeHist(resized)
-
-    # LBP hesapla
     lbp = np.zeros_like(eq)
     for i in range(1, size - 1):
         for j in range(1, size - 1):
@@ -96,8 +90,6 @@ def extract_lbp_features(gray_face, size=128):
             code |= (1 << 1) if eq[i+1, j-1] >= center else 0
             code |= (1 << 0) if eq[i,   j-1] >= center else 0
             lbp[i, j] = code
-
-    # Grid bazlı histogram (8x8 = 64 bölge)
     grid = 8
     cell = size // grid
     hist_all = []
@@ -106,10 +98,50 @@ def extract_lbp_features(gray_face, size=128):
             cell_lbp = lbp[r*cell:(r+1)*cell, c*cell:(c+1)*cell]
             hist, _ = np.histogram(cell_lbp, bins=32, range=(0, 256))
             hist_all.extend(hist)
-
     vec = np.array(hist_all, dtype=np.float32)
     norm = np.linalg.norm(vec)
     return vec / norm if norm > 0 else vec
+
+
+def extract_hog_features(gray_face, size=64):
+    """HOG (Histogram of Oriented Gradients) özellik vektörü"""
+    resized = cv2.resize(gray_face, (size, size))
+    eq = cv2.equalizeHist(resized)
+    gx = cv2.Sobel(eq, cv2.CV_32F, 1, 0, ksize=1)
+    gy = cv2.Sobel(eq, cv2.CV_32F, 0, 1, ksize=1)
+    mag, ang = cv2.cartToPolar(gx, gy, angleInDegrees=True)
+    cell = 8
+    bins = 9
+    hog_feats = []
+    for r in range(0, size, cell):
+        for c in range(0, size, cell):
+            m = mag[r:r+cell, c:c+cell]
+            a = ang[r:r+cell, c:c+cell] % 180
+            hist, _ = np.histogram(a, bins=bins, range=(0, 180), weights=m)
+            hog_feats.extend(hist)
+    vec = np.array(hog_feats, dtype=np.float32)
+    norm = np.linalg.norm(vec)
+    return vec / norm if norm > 0 else vec
+
+
+def extract_pixel_features(gray_face, size=32):
+    """Normalize edilmiş piksel vektörü — farklı ışık koşullarına karşı"""
+    resized = cv2.resize(gray_face, (size, size))
+    eq = cv2.equalizeHist(resized)
+    vec = eq.flatten().astype(np.float32)
+    norm = np.linalg.norm(vec)
+    return vec / norm if norm > 0 else vec
+
+
+def extract_combined_features(gray_face):
+    """LBP + HOG + Piksel kombinasyonu — en güçlü temsil"""
+    lbp  = extract_lbp_features(gray_face, size=64)
+    hog  = extract_hog_features(gray_face, size=64)
+    pix  = extract_pixel_features(gray_face, size=32)
+    # Ağırlıklı birleştir
+    combined = np.concatenate([lbp * 0.5, hog * 0.35, pix * 0.15])
+    norm = np.linalg.norm(combined)
+    return combined / norm if norm > 0 else combined
 
 
 def get_face_vector(pil_img):
@@ -118,52 +150,58 @@ def get_face_vector(pil_img):
     gray = np.array(pil_img.convert("L"))
 
     faces = detector.detectMultiScale(
-        gray, scaleFactor=1.05, minNeighbors=6, minSize=(60, 60)
+        gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50)
     )
     if len(faces) == 0:
         # Daha az katı ayarla tekrar dene
         faces = detector.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
+            gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
         )
     if len(faces) == 0:
         return None, None
 
     x, y, w, h = max(faces, key=lambda f: f[2]*f[3])
     face_gray = gray[y:y+h, x:x+w]
-    vec = extract_lbp_features(face_gray)
+    vec = extract_combined_features(face_gray)
     return vec, (x, y, w, h)
 
 
 def compare_faces(vec, known_vectors):
     """
-    Kayıtlı tüm vektörlerle karşılaştır, en iyi skoru döndür.
-    Cosine distance kullanır (1 = aynı, 0 = tamamen farklı).
+    En iyi 3 skoru ortalar — tek fotoğraf gürültüsüne karşı dayanıklı.
+    Boyut uyuşmazlığını da tolere eder.
     """
     scores = []
     for kv in known_vectors:
+        if len(kv) != len(vec):
+            continue
         sim = 1.0 - cosine(vec, kv)
-        scores.append(sim)
-    return max(scores), np.mean(scores)
+        scores.append(float(sim))
+    if not scores:
+        return 0.0, 0.0
+    scores.sort(reverse=True)
+    top = scores[:3]
+    return scores[0], float(np.mean(top))
 
 
-def detect_and_recognize(pil_img, threshold=0.78):
+def detect_and_recognize(pil_img, threshold=0.72):
     detector = load_detector()
     img_np   = np.array(pil_img.convert("RGB"))
     gray     = np.array(pil_img.convert("L"))
     annotated = img_np.copy()
 
     faces = detector.detectMultiScale(
-        gray, scaleFactor=1.05, minNeighbors=6, minSize=(60, 60)
+        gray, scaleFactor=1.05, minNeighbors=5, minSize=(50, 50)
     )
     if len(faces) == 0:
         faces = detector.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
+            gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
         )
 
     results = []
     for (x, y, w, h) in faces:
         face_gray = gray[y:y+h, x:x+w]
-        vec = extract_lbp_features(face_gray)
+        vec = extract_combined_features(face_gray)
 
         name = "Bilinmeyen Kişi"
         confidence = 0.0
@@ -203,9 +241,8 @@ def log_detection(results, source):
     for r in results:
         st.session_state.detection_log.append({
             "time": ts, "source": source,
-            "name": str(r["name"]),
-            "confidence": float(r["confidence"]),
-            "recognized": bool(r["recognized"])
+            "name": r["name"], "confidence": r["confidence"],
+            "recognized": r["recognized"]
         })
     st.session_state.total_detections += len(results)
     st.session_state.total_recognized += sum(1 for r in results if r["recognized"])
@@ -258,7 +295,7 @@ with st.sidebar:
 
     threshold = st.slider(
         "🎯 Tanıma Eşiği",
-        min_value=0.65, max_value=0.95, value=0.78, step=0.01,
+        min_value=0.65, max_value=0.95, value=0.72, step=0.01,
         help="Yüksek = daha katı, yanlış tanıma azalır"
     )
 
