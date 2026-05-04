@@ -3,5 +3,4 @@ opencv-python-headless
 numpy
 Pillow
 scikit-learn
-insightface
-onnxruntime
+scipy
