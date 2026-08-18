@@ -1,6 +1,5 @@
 # 🎭 Bulut Tabanlı Yüz Tanıma Sistemi
 
-> **Bulut Bilişim Proje Sunumu**  
 > PaaS (Platform as a Service) Mimarisi ile Canlıya Alma
 
 
@@ -150,4 +149,3 @@ yuz-tanima-sistemi/
 
 ---
 
-*Bulut Bilişim Dersi — 2024/2025 Akademik Yılı*
